@@ -1,9 +1,45 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Groq = require('groq-sdk');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const geminiModel = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
 
-const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
+const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
 
+async function generateWithFallback(prompt) {
+  try {
+    // Try Gemini first
+    console.log("Attempting to generate with Gemini...");
+    const result = await geminiModel.generateContent(prompt);
+    return result.response.text();
+  } catch (geminiError) {
+    console.error("Gemini failed:", geminiError.message);
+    
+    if (!groq) {
+        throw new Error(`Gemini failed and Groq is not configured. Gemini Error: ${geminiError.message}`);
+    }
+    
+    try {
+      // Fallback to Groq
+      console.log("Attempting to generate with Groq as fallback...");
+      const result = await groq.chat.completions.create({
+        messages: [
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        model: "llama3-8b-8192", // Groq fallback model
+        temperature: 0.5,
+        response_format: { type: "json_object" } // Using JSON mode as all prompts ask for JSON
+      });
+      return result.choices[0]?.message?.content || "";
+    } catch (groqError) {
+      console.error("Groq also failed:", groqError.message);
+      throw new Error("Both Gemini and Groq AI providers failed.");
+    }
+  }
+}
 
 
 /**
@@ -34,8 +70,7 @@ Evaluation criteria:
 
 Provide exactly 5 items for each category. Be specific and actionable.`;
 
-  const result = await model.generateContent(prompt);
-  const response = result.response.text();
+  const response = await generateWithFallback(prompt);
   
   // Clean the response - remove markdown code fences if present
   const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
@@ -82,8 +117,7 @@ Requirements:
 - Questions should be relevant to the "${jobRole}" role
 - Make questions realistic and commonly asked in real interviews`;
 
-  const result = await model.generateContent(prompt);
-  const response = result.response.text();
+  const response = await generateWithFallback(prompt);
   const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
   
   try {
@@ -118,8 +152,7 @@ Evaluation criteria:
 
 Be fair but thorough in your evaluation. Provide actionable feedback.`;
 
-  const result = await model.generateContent(prompt);
-  const response = result.response.text();
+  const response = await generateWithFallback(prompt);
   const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
   
   try {
