@@ -22,6 +22,11 @@ app.use('/api/interview', interviewRoutes);
 app.use('/api/history', historyRoutes);
 
 // Health check
+
+app.get('/',(req,res)=>{
+  res.send("Server is live");
+})
+
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
